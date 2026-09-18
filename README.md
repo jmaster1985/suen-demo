@@ -168,6 +168,8 @@ python3 -m ruff check . --fix
 
 ## CI/CD pipeline
 
+Example pipeline: Please see [https://github.com/jmaster1985/suen-demo/actions/runs/35343995527](https://github.com/jmaster1985/suen-demo/actions/runs/35343995527)
+
 The workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) is intentionally
 structured as a promotion pipeline: inexpensive deterministic checks run first, and
 container-level verification runs only after code quality passes.
