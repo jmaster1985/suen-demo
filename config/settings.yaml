@@ -1,0 +1,11 @@
+# Values outside these inclusive ranges are logged as outliers.
+foo:
+  min: -100
+  max: 100
+bar:
+  min: -100
+  max: 100
+buzz:
+  min: -100
+  max: 100
+
