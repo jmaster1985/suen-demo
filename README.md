@@ -7,12 +7,9 @@ three-dimensional sensor measurements:
 {"foo": 10, "bar": 20, "buzz": 30}
 ```
 
-The service consumes messages through a Kafka abstraction, classifies each measurement,
-logs anomalies, sanitizes accepted data, and persists it to PostgreSQL. Kafka is
-intentionally mocked for this demonstration: provisioning a real broker would obscure
-the application behavior this project is designed to showcase. The mock is isolated
-behind an injectable consumer interface, so a real Kafka adapter can be introduced
-without changing the business layer.
+The API validates and sanitizes each request, then publishes it to RabbitMQ through Celery.
+A Celery worker classifies the measurement, logs anomalies, and persists accepted data to
+PostgreSQL.
 
 ## Processing rules
 
@@ -25,10 +22,10 @@ inclusive:
 | `bar`  | `-100` through `100` |
 | `buzz` | `-100` through `100` |
 
-- A valid measurement inside all three ranges is rounded to four decimal places and
-  stored in PostgreSQL.
-- A valid measurement with one or more values outside the ranges is an outlier. It is
-  not stored and is emitted at `WARNING` level as
+- A valid measurement inside all three ranges is rounded to four decimal places before it
+  is queued. The worker stores it in PostgreSQL.
+- A valid measurement with one or more values outside the ranges is an outlier. The worker
+  does not store it and emits it at `WARNING` level as
   `outlier detected: {JSON_PAYLOAD}`.
 - A structurally valid request containing a non-numeric sensor value is invalid. It is
   not stored, is emitted at `ERROR` level as
@@ -51,6 +48,8 @@ The services are available at:
 
 - API: `http://localhost:8000`
 - PostgreSQL: `localhost:5432`
+- RabbitMQ AMQP: `localhost:5672`
+- RabbitMQ management UI: `http://localhost:15672` (`guest` / `guest`)
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 
@@ -71,13 +70,12 @@ The volume removal is destructive and deletes the local demo data.
 
 ## Demonstrate the API
 
-The demo publish endpoint is the presentation-friendly entry point to the mocked Kafka
-consumer. In a production deployment, this endpoint would be replaced or complemented
-by the actual broker adapter.
+The demo publish endpoint is the entry point to the Celery/RabbitMQ queue. It returns as
+soon as the sanitized message has been published; the worker processes it asynchronously.
 
 ### Successful measurement
 
-This is persisted after sanitization and returns `202 Accepted`:
+This is sanitized, queued, persisted by the worker, and returns `202 Accepted`:
 
 ```bash
 curl --request POST http://localhost:8000/api/v1/demo/messages \
@@ -88,20 +86,20 @@ curl --request POST http://localhost:8000/api/v1/demo/messages \
 ### Outlier measurement
 
 `foo=1000` is outside the configured range. The request returns `202`, the record is
-not persisted, and the app container emits a warning:
+not persisted, and the worker emits a warning:
 
 ```bash
 curl --request POST http://localhost:8000/api/v1/demo/messages \
   --header 'content-type: application/json' \
   --data '{"foo":1000,"bar":20,"buzz":30}'
 
-docker compose logs app
+docker compose logs worker
 ```
 
 Expected log message:
 
 ```text
-WARNING: outlier detected: {"foo":1000,"bar":20,"buzz":30}
+Task process_measurement[...] succeeded in 0.000953583003138192s: 'outlier'
 ```
 
 ### Invalid measurement
@@ -136,8 +134,8 @@ curl http://localhost:8000/health
 
 ## Run locally
 
-The application itself requires PostgreSQL. Docker Compose is the recommended local
-runtime because it provides the database with the same configuration used by the demo.
+The application requires PostgreSQL, RabbitMQ, and a running Celery worker. Docker Compose
+is the recommended local runtime because it provides all three with the demo configuration.
 
 For Python development and unit tests:
 
@@ -147,8 +145,8 @@ python3 -m pip install -e '.[dev]'
 python3 -m pytest -q
 ```
 
-The unit and API tests use in-memory fakes for persistence and do not require Docker or
-PostgreSQL.
+The unit and API tests use in-memory fakes for persistence and task publishing and do not
+require Docker, RabbitMQ, or PostgreSQL.
 
 ## Code quality
 
@@ -177,9 +175,9 @@ container-level verification runs only after code quality passes.
 1. **Quality gate** checks out the repository, installs the locked project dependency
    ranges, verifies formatting, runs Ruff linting, and executes the unit test suite.
 2. **Container build and E2E verification** builds the exact application image that is
-   tested, starts the application and PostgreSQL with Docker Compose, waits for
-   `/health`, then exercises successful, outlier, invalid, and paginated-read flows
-   through the real HTTP boundary.
+   tested, starts the application, PostgreSQL, RabbitMQ, and the Celery worker with Docker
+   Compose, waits for `/health`, then exercises successful, outlier, invalid, and
+   paginated-read flows through the real HTTP boundary.
 3. **Diagnostics and cleanup** always publishes application logs and removes containers,
    networks, and volumes, including on failure.
 4. **Registry publication placeholder** is present but disabled. It is the controlled

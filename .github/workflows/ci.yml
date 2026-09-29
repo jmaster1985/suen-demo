@@ -105,13 +105,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          response=$(curl --fail --silent --show-error \
-            'http://localhost:8000/api/v1/measurements?page=1&page_size=20')
-          grep -q '"total":1' <<< "$response"
+          for attempt in {1..30}; do
+            response=$(curl --fail --silent --show-error \
+              'http://localhost:8000/api/v1/measurements?page=1&page_size=20')
+            if grep -q '"total":1' <<< "$response"; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "$response"
+          exit 1
 
       - name: Show application logs
         if: always()
-        run: docker compose logs app
+        run: docker compose logs app worker
 
       - name: Stop Compose stack
         if: always()

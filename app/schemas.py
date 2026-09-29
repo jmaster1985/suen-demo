@@ -54,5 +54,5 @@ class MeasurementPage(BaseModel):
 
 
 def parse_payload(payload: Any) -> Measurement:
-    """Parse untrusted Kafka values while preserving a useful error for logging."""
+    """Parse untrusted message values while preserving a useful error for logging."""
     return Measurement.model_validate(payload)
