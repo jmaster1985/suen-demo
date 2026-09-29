@@ -1,4 +1,3 @@
-from collections.abc import AsyncIterator
 from typing import Any, Protocol
 
 from sqlalchemy.orm import Session
@@ -6,8 +5,8 @@ from sqlalchemy.orm import Session
 from app.schemas import Measurement, StoredMeasurement
 
 
-class MessageConsumer(Protocol):
-    async def messages(self) -> AsyncIterator[Any]: ...
+class MeasurementTask(Protocol):
+    def delay(self, payload: dict[str, float]) -> Any: ...
 
 
 class MeasurementRepository(Protocol):
